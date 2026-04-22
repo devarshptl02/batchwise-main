@@ -42,7 +42,7 @@ Open the project folder in your preferred code editor, and then launch the main 
 ---
 
 ### Link to visit the site : 
-https://chaos-to-order.netlify.app/
+https://tuition-app-7io.pages.dev/
 
 Site can be only accessed by the user or the admin via login.
 
