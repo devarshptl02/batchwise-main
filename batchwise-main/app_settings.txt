@@ -1,0 +1,204 @@
+app_settings
+{{{
+create table public.app_settings (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone not null default timezone ('utc'::text, now()),
+  institute_id uuid not null,
+  upi_id text null,
+  payment_link text null,
+  about_text text null,
+  institute_name text null,
+  institute_address text null,
+  updated_at timestamp with time zone null default timezone ('utc'::text, now()),
+  constraint app_settings_pkey primary key (id),
+  constraint app_settings_institute_id_key unique (institute_id),
+  constraint app_settings_institute_id_fkey foreign KEY (institute_id) references institutes (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create trigger set_inst_settings BEFORE INSERT on app_settings for EACH row
+execute FUNCTION auto_set_institute_id ();
+
+create trigger set_timestamp BEFORE
+update on app_settings for EACH row
+execute FUNCTION handle_updated_at ();
+}}}
+
+
+attendance
+{{{
+create table public.attendance (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone not null default timezone ('utc'::text, now()),
+  institute_id uuid not null,
+  date date not null,
+  status text not null,
+  student_id uuid null,
+  batch_name text null,
+  constraint attendance_pkey primary key (id),
+  constraint attendance_institute_id_fkey foreign KEY (institute_id) references institutes (id) on delete CASCADE,
+  constraint attendance_student_id_fkey foreign KEY (student_id) references students (id) on delete CASCADE,
+  constraint attendance_status_check check (
+    (
+      status = any (
+        array['present'::text, 'absent'::text, 'holiday'::text]
+      )
+    )
+  )
+) TABLESPACE pg_default;
+
+create trigger set_inst_attendance BEFORE INSERT on attendance for EACH row
+execute FUNCTION auto_set_institute_id ();
+}}}
+
+exam_marks
+{{{
+create table public.exam_marks (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone not null default timezone ('utc'::text, now()),
+  institute_id uuid not null,
+  test_id uuid not null,
+  student_id uuid not null,
+  marks_obtained numeric not null default 0,
+  constraint exam_marks_pkey primary key (id),
+  constraint exam_marks_test_id_student_id_key unique (test_id, student_id),
+  constraint exam_marks_institute_id_fkey foreign KEY (institute_id) references institutes (id) on delete CASCADE,
+  constraint exam_marks_student_id_fkey foreign KEY (student_id) references students (id) on delete CASCADE,
+  constraint exam_marks_test_id_fkey foreign KEY (test_id) references tests (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create trigger set_inst_marks BEFORE INSERT on exam_marks for EACH row
+execute FUNCTION auto_set_institute_id ();
+}}}
+
+
+institutes
+{{{create table public.institutes (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone not null default timezone ('utc'::text, now()),
+  name text not null,
+  address text null,
+  logo_url text null,
+  constraint institutes_pkey primary key (id)
+) TABLESPACE pg_default;
+}}}
+
+
+payment_requests
+{{{
+create table public.payment_requests (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone not null default timezone ('utc'::text, now()),
+  institute_id uuid not null,
+  student_id uuid not null,
+  amount numeric not null,
+  upi_ref_id text null,
+  status text null default 'pending'::text,
+  admin_remarks text null,
+  constraint payment_requests_pkey primary key (id),
+  constraint payment_requests_institute_id_fkey foreign KEY (institute_id) references institutes (id),
+  constraint payment_requests_student_id_fkey foreign KEY (student_id) references students (id)
+) TABLESPACE pg_default;
+}}}
+
+
+profiles
+{{{
+create table public.profiles (
+  id uuid not null,
+  institute_id uuid not null,
+  role text null default 'admin'::text,
+  full_name text null,
+  created_at timestamp with time zone not null default timezone ('utc'::text, now()),
+  constraint profiles_pkey primary key (id),
+  constraint profiles_id_fkey foreign KEY (id) references auth.users (id) on delete CASCADE,
+  constraint profiles_institute_id_fkey foreign KEY (institute_id) references institutes (id) on delete CASCADE
+) TABLESPACE pg_default;
+}}}
+
+student_subjects
+{{{
+create table public.student_subjects (
+  id uuid not null default gen_random_uuid (),
+  institute_id uuid not null,
+  student_id uuid not null,
+  subject_name text not null,
+  batch_name text not null,
+  created_at timestamp with time zone null default now(),
+  constraint student_subjects_pkey primary key (id),
+  constraint student_subjects_student_id_subject_name_batch_name_key unique (student_id, subject_name, batch_name),
+  constraint student_subjects_institute_id_fkey foreign KEY (institute_id) references institutes (id) on delete CASCADE,
+  constraint student_subjects_student_id_fkey foreign KEY (student_id) references students (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create trigger set_inst_student_subjects BEFORE INSERT on student_subjects for EACH row
+execute FUNCTION auto_set_institute_id ();
+}}}
+
+
+students
+{{{
+create table public.students (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone not null default timezone ('utc'::text, now()),
+  institute_id uuid not null,
+  name text not null,
+  parent_phone text not null,
+  batch_name text not null,
+  joining_date date null default CURRENT_DATE,
+  total_fee_package numeric null default 0,
+  paid_amount numeric null default 0,
+  monthly_installment_plan boolean null default false,
+  pending_payment numeric null default 0,
+  enrolled_subjects text[] null,
+  secret_slug text null default encode(extensions.gen_random_bytes (6), 'hex'::text),
+  last_payment_status text null default 'approved'::text,
+  last_payment_remarks text null,
+  constraint students_pkey primary key (id),
+  constraint students_secret_slug_key unique (secret_slug),
+  constraint students_institute_id_fkey foreign KEY (institute_id) references institutes (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create trigger ensure_subject_exists_trigger
+after INSERT
+or
+update OF batch_name on students for EACH row
+execute FUNCTION sync_batch_to_subjects ();
+
+create trigger set_inst_students BEFORE INSERT on students for EACH row
+execute FUNCTION auto_set_institute_id ();
+}}}
+
+
+subjects
+{{{
+create table public.subjects (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone not null default timezone ('utc'::text, now()),
+  institute_id uuid not null,
+  name text not null,
+  batch_name text not null,
+  default_fee numeric not null default 0,
+  constraint subjects_pkey primary key (id),
+  constraint subjects_institute_id_fkey foreign KEY (institute_id) references institutes (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create trigger set_inst_subjects BEFORE INSERT on subjects for EACH row
+execute FUNCTION auto_set_institute_id ();
+}}}
+
+tests
+{{{
+create table public.subjects (
+  id uuid not null default gen_random_uuid (),
+  created_at timestamp with time zone not null default timezone ('utc'::text, now()),
+  institute_id uuid not null,
+  name text not null,
+  batch_name text not null,
+  default_fee numeric not null default 0,
+  constraint subjects_pkey primary key (id),
+  constraint subjects_institute_id_fkey foreign KEY (institute_id) references institutes (id) on delete CASCADE
+) TABLESPACE pg_default;
+
+create trigger set_inst_subjects BEFORE INSERT on subjects for EACH row
+execute FUNCTION auto_set_institute_id ();
+}}}
